@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+KEYDIR = "keys/"
+
 ############################ Our favorite class ############################
 
 class MsgRecord:
@@ -521,21 +523,21 @@ def sendRound_1():
     
     if 1:
         # Read from file Ephemeral keys
-        file = open(join(split(__file__)[0],"ephkey"+context.myUsername+".txt"), 'r')
+        file = open(join(split(__file__)[0], KEYDIR + "ephkey"+context.myUsername+".txt"), 'r')
         context.myEphKeys = file.read() # this is a keypair -- public and private keys
         file.close()
-        file = open(join(split(__file__)[0],"ephPubkey"+context.myUsername+".txt"), 'r')
+        file = open(join(split(__file__)[0], KEYDIR + "ephPubkey"+context.myUsername+".txt"), 'r')
         context.myEphPubKey = file.read()
         file.close()
     else:
         # Generate Ephemeral keys
         print "start Key generation for ", context.myUsername
         context.myEphKeys = crypto.generateKeys()
-        file = open(join(split(__file__)[0],"ephkey"+context.myUsername+".txt"), 'w')
+        file = open(join(split(__file__)[0], KEYDIR + "ephkey"+context.myUsername+".txt"), 'w')
         file.write(context.myEphKeys)
         file.close()
         context.myEphPubKey = crypto.getPubPrivKey(c_char_p(context.myEphKeys), c_char_p("public-key"))
-        file = open(join(split(__file__)[0],"ephPubkey"+context.myUsername+".txt"), 'w')
+        file = open(join(split(__file__)[0], KEYDIR + "ephPubkey"+context.myUsername+".txt"), 'w')
         file.write(context.myEphPubKey)
         file.close()
 
