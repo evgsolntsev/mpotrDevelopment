@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import output
+import inp
 
 KEYDIR = "keys/"
 
@@ -16,6 +18,7 @@ class MsgRecord:
 class Round:
     sended = 0
     recieved = 0
+
 class Communicate:
     messNum = 0 # Number of text messages sended to the chat
     frontier = []
@@ -52,6 +55,7 @@ class mpOTRContext:
     len_msg_id_random = 8
     comm = Communicate()
     # Shutdown phase info
+    idskeFinished = 0
     sdwnStarted = 0
     sdwnTranscriptCompleted = 0
     sdwn = Round()
@@ -63,7 +67,7 @@ class mpOTRContext:
         user = purple.PurpleConversationGetAccount(purple.PurpleConvChatGetConversation(chat))
         self.myUsername = purple.PurpleAccountGetUsername(user).split("@")[0]
         self.members_count = len(purple.PurpleConvChatGetUsers(chat))
-        print self.members_count, " members in chat are online"
+        displaier.log(str(self.members_count) + " members in chat are online")
         # init arrays of needed size
         for user in purple.PurpleConvChatGetUsers(chat):
             self.xoredNonceList.append("")
@@ -82,7 +86,7 @@ class mpOTRContext:
 # Handle Recieved message -- big switch
 #
 def receivedMessage(account, sender, message, conversation, flags):
-    global context
+    global context, loop
     if conversation == purple.PurpleConvChatGetConversation(context.chat):
         #print sender, "said:", message # Commented for DEBUGing purpose 
         mess_splitted = message.split(":", 2)
@@ -100,6 +104,7 @@ def receivedMessage(account, sender, message, conversation, flags):
                 if ((context.r_1.recieved == context.members_count)
                 and not context.r_2.sended): 
                 # Round finished
+                    displaier.log("Round 1 finished")
                     sendRound_2()
                     context.r_2.sended = 1
             elif (mess_splitted[1] == "A_R2"):
@@ -110,6 +115,7 @@ def receivedMessage(account, sender, message, conversation, flags):
                 if ((context.r_2.recieved == context.members_count)
                 and not context.r_3.sended): 
                 # Round finished
+                    displaier.log("Round 2 finished")
                     sendRound_3()
                     context.r_3.sended = 1
             elif (mess_splitted[1] == "A_R3"):
@@ -120,6 +126,7 @@ def receivedMessage(account, sender, message, conversation, flags):
                 if ((context.r_3.recieved == context.members_count)
                 and not context.r_4.sended):
                 # Round finished
+                    displaier.log("Round 3 finished")
                     sendRound_4()
                     context.r_4.sended = 1
             elif (mess_splitted[1] == "A_R4"):
@@ -129,12 +136,12 @@ def receivedMessage(account, sender, message, conversation, flags):
                     context.r_4.sended = 1
                 if (context.r_4.recieved == context.members_count): 
                 # Round finished
-                    print "IDSKE finished successfully"
+                    displaier.log("IDSKE finished successfully")
                     # set the lost messages requests
+                    context.idskeFinished = 1
                     gobject.timeout_add(10000, requestLostMsg) # request every 3 sec
-                    sendOneTextMess()
             elif (mess_splitted[1] == "TEXT"):
-                processText(sender, mess_splitted[2])
+				processText(sender, mess_splitted[2])
             elif (mess_splitted[1] == "LostMsgReq"):
                 processRequestLostMsg(sender, mess_splitted[2])
             elif (mess_splitted[1] == "Sdwn"):
@@ -158,16 +165,16 @@ def receivedMessage(account, sender, message, conversation, flags):
                     purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys)
                     context.keyPair.sended = 1
             elif (mess_splitted[1] == "KeyPair"):
-                print sender, "'s ephemeral keypair is:", mess_splitted[2]
+                displaier.log(str(sender) + "'s ephemeral keypair is:" + str(mess_splitted[2]))
                 context.keyPair.recieved += 1
                 if not context.keyPair.sended:
                     purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys)
                     context.keyPair.sended = 1
                 if (context.keyPair.recieved == context.members_count): 
                     # Shutdown is finished
-                    print "Your conversation is finished (properly)"
+                    displaier.log("Your conversation is finished (properly)")
             elif (mess_splitted[1] == "ERR"):
-                print "mpOTR ERROR: ", mess_splitted[2]
+                displaier.log("mpOTR ERROR: " +  str(mess_splitted[2]))
         
 
 
@@ -178,7 +185,7 @@ def receivedMessage(account, sender, message, conversation, flags):
 def sendShutdown():
     global context, crypto, purple 
     ## Add the OldBlue info here
-    time.sleep(5)
+    time.sleep(1)
     msgId = crypto.getSomeNonce(c_int(context.len_msg_id_random))
     finMsg = "mpOTR:Sdwn:" + context.sid + ";" + msgId
     if len(context.comm.frontier) > 0:
@@ -206,7 +213,8 @@ def sendShutdownConfirm():
 # List of parents may be empty
 #
 def processShutdownInit(sender, msg):
-    global context, crypto, purple   
+    global context, crypto, purple
+    displaier.log("Start shutdown...")
     mess_splitted = msg.split(";")
     count = len(mess_splitted)
     tmp = "mpOTR:Sdwn:" + mess_splitted[0]  # verify signature
@@ -229,13 +237,14 @@ def processShutdownInit(sender, msg):
     #if count-1 > 2
     for i in range(2, count-1):
         tmp += mess_splitted[i] + ";"  # Careful! It ends with empty piece
-    checkLostedParents(tmp) # check parents
+    checkLostedParents(tmp) # check parents (ignore result because of requestLostMsg every 3 seconds)
     context.sdwn.recieved +=1
     deliver()
 
     # check transcript completeness
     if context.sdwnStarted and len(context.comm.lostMsg) == 0 and len(context.comm.undelivered) == 0:
         context.sdwnTranscriptCompleted = 1
+
 #
 # Check the signature and the sid of the shutdown confirmation message
 #
@@ -253,36 +262,14 @@ def processShutdownConf(sender, msg):
 
 
 
+
 ############## Communication phase #####################
 #
-# Send some message to the chat
-#
-def sendOneTextMess():
-    global context
-    if context.comm.messNum == 0:
-        sendEncOldBlueMess("Hi1!")
-    elif context.comm.messNum == 1:
-        sendEncOldBlueMess("hi2!")
-    elif context.comm.messNum == 2:
-        sendEncOldBlueMess("hi3!")
-    elif context.comm.messNum == 3:
-        sendEncOldBlueMess("hi4!")
-    elif context.comm.messNum == 4:
-        sendEncOldBlueMess("hi5!")
-    elif context.comm.messNum == 5:
-        sendEncOldBlueMess("hi6!")
-    elif not context.sdwn.sended :
-        context.sdwn.sended = 1
-        sendShutdown()
-    context.comm.messNum += 1
-
-#
-# Pack the message and send it 
+# Pack the message to send it 
 #
 def sendEncOldBlueMess(message):
     global context, crypto, purple 
     msgEnc = crypto.encrypt(c_char_p(message), c_char_p(context.sessionKey))
-    #msgEnc = message # for DEBUG
     msgId = crypto.getSomeNonce(c_int(context.len_msg_id_random))
     finMsg = "mpOTR:TEXT:" + context.myUsername + ";" + context.sid + ";" + msgEnc + ";" + msgId
     parents = ""
@@ -291,32 +278,30 @@ def sendEncOldBlueMess(message):
             parents += ";" + context.comm.frontier[i]
     finMsg += parents + ";"
     sign = crypto.sign(c_char_p(finMsg), c_char_p(context.myEphKeys))
-    if context.comm.messNum == 1 and context.myNum == 1:
-    #if 0:
-        # Deliver only to client2 -- aka Losted message for everyone except client2
-        print "Xe-Xe ;)"
-        clearLostMsg(msgId) 
-        tmp = ""
-        checkLostedParents(parents) # check parents
-        finMsg += sign
-        context.comm.undelivered.append(MsgRecord(context.myUsername, msgId, parents,  msgEnc, finMsg))
-        deliver() 
- 
-        # Piece for shutdown phase
-        if context.sdwnStarted and len(context.comm.lostMsg) == 0 and len(context.comm.undelivered) == 0:
-            context.sdwnTranscriptCompleted = 1
-            if (context.sdwn.recieved == context.members_count): 
-                # Shutdown initiation finished
-                sendShutdownConfirm()
-                context.sdwnConf.sended = 1
+#    if 0:#context.comm.messNum == 1 and context.myNum == 1:
+#    #if 0:
+#        # Deliver only to client2 -- aka Losted message for everyone except client2
+#        print "Xe-Xe ;)"
+#        clearLostMsg(msgId) 
+#        tmp = ""
+#        checkLostedParents(parents) # check parents
+#        finMsg += sign
+#        context.comm.undelivered.append(MsgRecord(context.myUsername, msgId, parents,  msgEnc, finMsg))
+#        deliver() 
+# 
+#        # Piece for shutdown phase
+#        if context.sdwnStarted and len(context.comm.lostMsg) == 0 and len(context.comm.undelivered) == 0:
+#            context.sdwnTranscriptCompleted = 1
+#            if (context.sdwn.recieved == context.members_count): 
+#                # Shutdown initiation finished
+#                sendShutdownConfirm()
+#                context.sdwnConf.sended = 1
+#    else:
+    return finMsg + sign
 
-        context.comm.messNum += 1
-        sendOneTextMess()
-        context.comm.messNum -= 1 # Getting back the order of messNum
-
-    else:
-        # Ordinary situation
-        purple.PurpleConvChatSend(context.chat, finMsg + sign)
+#send message
+def sendMessage(message):
+    purple.PurpleConvChatSend(chat, sendEncOldBlueMess(message))
 
 #
 # Process the incoming Lost Msg request
@@ -443,7 +428,7 @@ def deliver():
                 context.comm.delivered.append(context.comm.undelivered[i])
                 # Didplay! *Finally*
                 msgDec = crypto.decrypt(c_char_p(context.comm.undelivered[i].txt), c_char_p(context.sessionKey))
-                print context.comm.undelivered[i].sender, " said:", msgDec
+                displaier.display(context.comm.undelivered[i].sender, msgDec)
                 # remove from undelivered
                 del context.comm.undelivered[i]
                 break
@@ -503,7 +488,6 @@ def processText(sender, message):
 
     #print sender, "said:", msgDec 
     time.sleep(5)
-    sendOneTextMess()
 
 
 ############### Authentication Round 1 processing ####
@@ -521,7 +505,7 @@ def sendRound_1():
     context.myPrivKey = crypto.getSomeNonce(c_int(context.len_authNonce_random))
     context.myPubKey = crypto.exponent(c_char_p("2"), c_char_p(context.myPrivKey))
     
-    if 1:
+    if 0:
         # Read from file Ephemeral keys
         file = open(join(split(__file__)[0], KEYDIR + "ephkey"+context.myUsername+".txt"), 'r')
         context.myEphKeys = file.read() # this is a keypair -- public and private keys
@@ -533,6 +517,7 @@ def sendRound_1():
         # Generate Ephemeral keys
         print "start Key generation for ", context.myUsername
         context.myEphKeys = crypto.generateKeys()
+        print "keypair generated"
         file = open(join(split(__file__)[0], KEYDIR + "ephkey"+context.myUsername+".txt"), 'w')
         file.write(context.myEphKeys)
         file.close()
@@ -645,7 +630,7 @@ def processRound_3(sender, message):
             ## Add recived info to lists
             context.xoredNonceList[i] = mess_splitted[0]
             context.bigTList[i] = mess_splitted[1]
-            context.r_3.recieved +=1
+            context.r_3.recieved += 1
 
 ############### Authentication Round 4 processing ####
 #
@@ -762,6 +747,34 @@ def processNonce(sender, nonce):
         print "This Session's ID is ", sid
 
 
+def checkChat(conv_chat):
+    global account
+    ch_acc = purple.PurpleConversationGetAccount(conv_chat)
+    return ch_acc == account       # FIX NEEDED: potentially fails with several chats
+
+
+#
+#Stop chat(if buddy join or left the chat)
+#
+def stopChat(name):
+    global context
+    if context.myNum != 0 & context.usernameList[0] != name: # only one should start shutdown
+        return
+    elif context.usernameList[0] == name & context.myNum != 1:
+        return
+
+    sendShutdown()
+    
+    
+def chatbuddyleft(conv, name, reason):
+    global context
+    context.members_count -= 1
+    if not checkChat(conv):
+        return
+    print conv, context.chat
+    displaier.log(name + " left the chat, so stopping conversaion; to contunue talking, please, restart program")
+    stopChat(name)
+
 ####################### Main Main program #############################
 
 # Import libraries
@@ -794,8 +807,9 @@ crypto.decrypt.restype = c_char_p
 #crypto.pk_example()
 #crypto.enc_example()
 
-# Add receivedMessage signal handler
+# Add signal handlers
 bus.add_signal_receiver(receivedMessage, dbus_interface="im.pidgin.purple.PurpleInterface", signal_name="ReceivedChatMsg")
+bus.add_signal_receiver(chatbuddyleft, dbus_interface="im.pidgin.purple.PurpleInterface", signal_name="ChatBuddyLeft")
 
 # set purple object
 obj = bus.get_object("im.pidgin.purple.PurpleService", "/im/pidgin/purple/PurpleObject")
@@ -813,17 +827,22 @@ account_number = int(raw_input("Choose the account (number): "))
 account = purple.PurpleAccountsGetAllActive()[account_number-1]
 print "\nYour account is ", purple.PurpleAccountGetUsername(account)
 
+# Initialize IO objects
+displaier = output.Displaier()
+inp = inp.Input(displaier, sendMess = sendMessage, sendShutdown = sendShutdown)
+
 # Fing needed chat
 for conv_chat in purple.PurpleGetChats():
-    ch_acc = purple.PurpleConversationGetAccount(conv_chat)
-    if ch_acc == account:    # FIX NEEDED: potentially fails with several chats
+    if checkChat(conv_chat):    
          chat = purple.PurpleConvChat(conv_chat)
-         
+
 # Create the context
 context = mpOTRContext(chat)
-
 # Say that you are in
 purple.PurpleConvChatSend(chat, "mpOTR:Init:I'm here")
+
+
+
 
 # main loop
 loop = gobject.MainLoop()
@@ -845,4 +864,5 @@ loop.run()
 
 
 ### len(purple.PurpleConvChatGetUsers(context.chat))
+
 

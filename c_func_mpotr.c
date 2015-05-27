@@ -832,22 +832,21 @@ unsigned char* generateKeys()
     if (err) {
         printf("gcrypt: failed to create rsa params\n");
     }
+    printf("0\n");
     err = gcry_pk_genkey (&r_key, param);
     if (err) {
         printf("gcrypt: failed to create rsa keypair\n");
     }
-    
+    printf("1\n");
     // To string
     int len = gcry_sexp_sprint(r_key, GCRYSEXP_FMT_DEFAULT, NULL, 0);
     char* buffer = (char*) malloc ((len) * sizeof(char));
     int length = gcry_sexp_sprint(r_key, GCRYSEXP_FMT_DEFAULT, buffer, len);
     buffer[length] = '\0';
-    
     // make it base64
     int res_len = 0;
     unsigned char* buffer_res = base64(buffer, len, &res_len);
     // printf("base64 result: %s\n", buffer_res);
-    
     gcry_sexp_release(r_key);
     gcry_sexp_release(param);
     free(buffer);
