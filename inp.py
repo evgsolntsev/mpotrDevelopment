@@ -25,15 +25,17 @@ class Input(object):
     #Process chat commands
     def processCommand(self, command):
         self.displaier.redisplay()
+        self.displaier.log('command: ' + command)
        	global loop
         c = command[1:]
     	if (c == "exit"):
-            self.sendShutdown()
-            loop.quit()
+            self.sendShutdown(0)
+        elif (c == "restart"):
+            self.sendShutdown(1)
         elif (c == "cat"):
-            self.displaier.log("\n /\\___/\\\n( o   o )\n(  =^=  )\n(        )\n(         )\n(          )))))))))))))))\n")
+            self.displaier.system("\n /\\___/\\\n( o   o )\n(  =^=  )\n(        )\n(         )\n(          )))))))))))))))\n")
         else:
-            self.displaier.log("Unknown command: " +  c)
+            self.displaier.system("Unknown command: " +  c)
 
     #Process command or send message
     def commandSwitch(self, message):

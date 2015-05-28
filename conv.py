@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import output
 import inp
+import random
 
 KEYDIR = "keys/"
 
@@ -18,6 +19,9 @@ class MsgRecord:
 class Round:
     sended = 0
     recieved = 0
+    def __init__(self):
+        sended = 0
+        received = 0
 
 class Communicate:
     messNum = 0 # Number of text messages sended to the chat
@@ -51,6 +55,7 @@ class mpOTRContext:
     r_2 = Round()
     r_3 = Round()
     r_4 = Round()
+    MyNum = random.randint(1, 10)
     # Comm phase info
     len_msg_id_random = 8
     comm = Communicate()
@@ -63,6 +68,41 @@ class mpOTRContext:
     keyPair = Round()
     # and so
     def __init__(self, chat):
+        # chat
+        self.usernameList = []
+        # Initiation info
+        self.init_mess_count = 0   # initialisation -- Channel Establishment
+        # AKE info 
+        self.len_sid_random = 13
+        self.len_authNonce_random = 0 # Means that the random number will be modulo prime number q 
+        self.hashedNonceList = []
+        self.lPubKeys = []
+        self.ephPubKeys = []
+        self.sid = ""
+        self.expAuthNonce = []
+        self.xoredNonceList = []
+        self.bigTList = []
+        self.nonceList = []
+        self.myPrivKey = ""
+        self.myPubKey = ""
+        self.myEphKeys = ""
+        self.myEphPubKey = ""
+        self.r_1 = Round()
+        self.r_2 = Round()
+        self.r_3 = Round()
+        self.r_4 = Round()
+        self.r_1.sended = 0
+        self.MyNum = random.randint(1, 10)
+        # Comm phase info
+        self.len_msg_id_random = 8
+        self.comm = Communicate()
+        # Shutdown phase info
+        self.idskeFinished = 0
+        self.sdwnStarted = 0
+        self.sdwnTranscriptCompleted = 0
+        self.sdwn = Round()
+        self.sdwnConf = Round()
+        self.keyPair = Round()
         self.chat = chat
         user = purple.PurpleConversationGetAccount(purple.PurpleConvChatGetConversation(chat))
         self.myUsername = purple.PurpleAccountGetUsername(user).split("@")[0]
@@ -86,7 +126,7 @@ class mpOTRContext:
 # Handle Recieved message -- big switch
 #
 def receivedMessage(account, sender, message, conversation, flags):
-    global context, loop
+    global context, loop, chat
     if conversation == purple.PurpleConvChatGetConversation(context.chat):
         #print sender, "said:", message # Commented for DEBUGing purpose 
         mess_splitted = message.split(":", 2)
@@ -137,9 +177,10 @@ def receivedMessage(account, sender, message, conversation, flags):
                 if (context.r_4.recieved == context.members_count): 
                 # Round finished
                     displaier.log("IDSKE finished successfully")
+                    displaier.system("You're welcome to chat now!")
                     # set the lost messages requests
                     context.idskeFinished = 1
-                    gobject.timeout_add(10000, requestLostMsg) # request every 3 sec
+                    gobject.timeout_add(1000, requestLostMsg) # request every 3 sec
             elif (mess_splitted[1] == "TEXT"):
 				processText(sender, mess_splitted[2])
             elif (mess_splitted[1] == "LostMsgReq"):
@@ -148,31 +189,41 @@ def receivedMessage(account, sender, message, conversation, flags):
                 context.sdwnStarted = 1
                 processShutdownInit(sender, mess_splitted[2])
                 if not context.sdwn.sended:
-                    sendShutdown()
+                    sendShutdown(int(mess_splitted[2].split(';')[-2]))
                     context.sdwn.sended = 1
                 if (context.sdwn.recieved == context.members_count): 
                     requestLostMsg() # in case some are losted
                 if (context.sdwn.recieved == context.members_count) and context.sdwnTranscriptCompleted: 
                     # Shutdown initiation finished
-                    sendShutdownConfirm()
+                    sendShutdownConfirm(int(mess_splitted[2].split(';')[-2]))
                     context.sdwnConf.sended = 1
             elif (mess_splitted[1] == "SdwnConf"):
                 processShutdownConf(sender, mess_splitted[2])
                 if not context.sdwnConf.sended:
-                    sendShutdownConfirm()
+                    sendShutdownConfirm(int(mess_splitted[2].split(';')[-2]))
                     context.sdwnConf.sended = 1
                 if (context.sdwnConf.recieved == context.members_count): 
-                    purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys)
+                    time.sleep((context.myNum + 2) / 5)
+                    purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys + ';' + mess_splitted[2].split(';')[-2])
                     context.keyPair.sended = 1
             elif (mess_splitted[1] == "KeyPair"):
-                displaier.log(str(sender) + "'s ephemeral keypair is:" + str(mess_splitted[2]))
+                displaier.log(str(sender) + "'s ephemeral keypair is:" + str(mess_splitted[2].split(';')[0]))
+                time.sleep((context.MyNum + 2) / 5)
                 context.keyPair.recieved += 1
                 if not context.keyPair.sended:
-                    purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys)
+                    purple.PurpleConvChatSend(context.chat, "mpOTR:KeyPair:" + context.myEphKeys + ";" + mess_splitted[2].split(';')[1])
                     context.keyPair.sended = 1
                 if (context.keyPair.recieved == context.members_count): 
                     # Shutdown is finished
-                    displaier.log("Your conversation is finished (properly)")
+                    if (mess_splitted[2].split(';')[1] == '0'):
+                        displaier.log("Your conversation is finished (properly)")
+                        displaier.system('Chat stopped, shutdown now')
+                        loop.quit()
+                    else:
+                        mn = context.MyNum
+                        context = mpOTRContext(chat)
+                        context.MyNum = mn
+                        purple.PurpleConvChatSend(chat, "mpOTR:Init:I'm here")
             elif (mess_splitted[1] == "ERR"):
                 displaier.log("mpOTR ERROR: " +  str(mess_splitted[2]))
         
@@ -182,16 +233,21 @@ def receivedMessage(account, sender, message, conversation, flags):
 #
 # Send shutdown initiation message
 #
-def sendShutdown():
+def sendShutdown(isRestart):
     global context, crypto, purple 
     ## Add the OldBlue info here
-    time.sleep(1)
+    time.sleep(0.1)
     msgId = crypto.getSomeNonce(c_int(context.len_msg_id_random))
-    finMsg = "mpOTR:Sdwn:" + context.sid + ";" + msgId
+    if isRestart:
+        flag = "1"
+    else:
+        flag = "0"
+ 
+    finMsg = "mpOTR:Sdwn:" + context.sid + ";" + msgId 
     if len(context.comm.frontier) > 0:
         for i in range(0, len(context.comm.frontier)): # Adding msg's parents
             finMsg += ";" + context.comm.frontier[i]
-    finMsg += ";"
+    finMsg += ";" + flag + ";"
     sign = crypto.sign(c_char_p(finMsg), c_char_p(context.myEphKeys))
     purple.PurpleConvChatSend(context.chat, finMsg + sign)
     context.sdwn.sended = 1
@@ -199,11 +255,14 @@ def sendShutdown():
 #
 # Send message to confirm shutdown
 #
-def sendShutdownConfirm():
+def sendShutdownConfirm(isRestart):
     global context, crypto, purple
-    time.sleep(context.myNum+3)
-    #time.sleep(2)
-    finMsg = "mpOTR:SdwnConf:" + context.sid + ";"
+    time.sleep((context.MyNum+3) / 5)
+    if isRestart:
+        flag = "1"
+    else:
+        flag = "0"
+    finMsg = "mpOTR:SdwnConf:" + context.sid + ";"+flag+";"
     sign = crypto.sign(c_char_p(finMsg), c_char_p(context.myEphKeys))
     purple.PurpleConvChatSend(context.chat, finMsg + sign)
 
@@ -226,7 +285,7 @@ def processShutdownInit(sender, msg):
         if context.usernameList[i] == sender:
             err = crypto.verifySign(c_char_p(tmp), c_char_p(mess_splitted[count-1]), c_char_p(context.ephPubKeys[i]))
             if (err != 0):
-                purple.PurpleConvChatSend(context.chat, "mpOTR:ERR:Error Process Init Shutdown at verifing signature from "+sender)
+               # purple.PurpleConvChatSend(context.chat, "mpOTR:ERR:Error Process Init Shutdown at verifing signature from "+sender)
                 return
     #Check the sid
     if (mess_splitted[0] != context.sid):
@@ -234,8 +293,7 @@ def processShutdownInit(sender, msg):
         return
     clearLostMsg(mess_splitted[1]) 
     tmp = ""
-    #if count-1 > 2
-    for i in range(2, count-1):
+    for i in range(2, count-2):
         tmp += mess_splitted[i] + ";"  # Careful! It ends with empty piece
     checkLostedParents(tmp) # check parents (ignore result because of requestLostMsg every 3 seconds)
     context.sdwn.recieved +=1
@@ -254,7 +312,7 @@ def processShutdownConf(sender, msg):
     # Verify the signature
     for i in range(0, context.members_count):
         if context.usernameList[i] == sender:
-            err = crypto.verifySign(c_char_p("mpOTR:SdwnConf" + mess_splitted[0] + ";"), c_char_p(mess_splitted[1]), c_char_p(context.ephPubKeys[i]))
+            err = crypto.verifySign(c_char_p("mpOTR:SdwnConf" + mess_splitted[0] + ";"), c_char_p(mess_splitted[-1]), c_char_p(context.ephPubKeys[i]))
             if (err != 0):
                 purple.PurpleConvChatSend(context.chat, "mpOTR:ERR:Error Processing Shutdown Confirmation at verifing signature from "+sender)
                 return
@@ -308,8 +366,7 @@ def sendMessage(message):
 #
 def processRequestLostMsg(sender, message):
     global context, purple
-    time.sleep(2 + context.myNum)
-    #time.sleep(2)
+    time.sleep((2 + context.myNum)/10)
     mess_splitted = message.split(";")
     #print "We have LostMsg request from ", sender, " asking ", mess_splitted[0]
     # verify signature
@@ -336,8 +393,9 @@ def processRequestLostMsg(sender, message):
 #
 def requestLostMsg():
     global crypto, context, purple
-    time.sleep(1 + context.myNum)
-    #time.sleep(2)
+    if context.idskeFinished == 0:
+        return
+    time.sleep((1 + context.myNum) / 10)
     if len(context.comm.lostMsg) > 0:
         for i in range(0, len(context.comm.lostMsg)):
             #print "I'm ", context.myNum, " requesting ", len(context.comm.lostMsg), "times message ", context.comm.lostMsg[i] 
@@ -483,11 +541,11 @@ def processText(sender, message):
         context.sdwnTranscriptCompleted = 1
         if (context.sdwn.recieved == context.members_count): 
             # Shutdown initiation finished
-            sendShutdownConfirm()
+            sendShutdownConfirm(int(mess_splitted[-2]))
             context.sdwnConf.sended = 1
 
     #print sender, "said:", msgDec 
-    time.sleep(5)
+    time.sleep(0.2)
 
 
 ############### Authentication Round 1 processing ####
@@ -505,7 +563,7 @@ def sendRound_1():
     context.myPrivKey = crypto.getSomeNonce(c_int(context.len_authNonce_random))
     context.myPubKey = crypto.exponent(c_char_p("2"), c_char_p(context.myPrivKey))
     
-    if 0:
+    if 1:
         # Read from file Ephemeral keys
         file = open(join(split(__file__)[0], KEYDIR + "ephkey"+context.myUsername+".txt"), 'r')
         context.myEphKeys = file.read() # this is a keypair -- public and private keys
@@ -589,7 +647,7 @@ def processRound_2(sender, message):
 # Generate t's and send message to chat
 #
 def sendRound_3():
-    global context, crypto, purple
+    global context, crypto, purple, displaier
     # find my number
     myNum = -1;
     for i in range(0, context.members_count):
@@ -599,7 +657,7 @@ def sendRound_3():
     if myNum == -1:
         print "Something is wrong with the username"
     context.myNum = myNum
-    print "My Number is ", context.myNum
+    displaier.log("My Number is " + str(context.myNum))
     ind_left = context.members_count-1 if (myNum == 0) else myNum-1
     ind_right = 0 if (myNum == context.members_count-1) else myNum+1
     
@@ -756,15 +814,14 @@ def checkChat(conv_chat):
 #
 #Stop chat(if buddy join or left the chat)
 #
-def stopChat(name):
+def stopChat(name, isRestart):
     global context
-    if context.myNum != 0 & context.usernameList[0] != name: # only one should start shutdown
+    if (context.myNum != 0) & (context.usernameList[0] != name): # only one should start shutdown
         return
-    elif context.usernameList[0] == name & context.myNum != 1:
+    elif (context.usernameList[0] == name) & (context.myNum != 1):
         return
 
-    sendShutdown()
-    
+    sendShutdown(isRestart)        
     
 def chatbuddyleft(conv, name, reason):
     global context
@@ -772,8 +829,10 @@ def chatbuddyleft(conv, name, reason):
     if not checkChat(conv):
         return
     print conv, context.chat
-    displaier.log(name + " left the chat, so stopping conversaion; to contunue talking, please, restart program")
-    stopChat(name)
+    displaier.log(name + "left chat, stop now")
+    displaier.system(name + " left the chat, so stopping conversaion; to contunue talking, please, restart program")
+    stopChat(name, 1)
+
 
 ####################### Main Main program #############################
 
@@ -816,14 +875,15 @@ obj = bus.get_object("im.pidgin.purple.PurpleService", "/im/pidgin/purple/Purple
 purple = dbus.Interface(obj, "im.pidgin.purple.PurpleInterface")
 
 # Choose one of three XMPP accounts
+# Get account to work with
+print "Choose your account please:"
 i = 1
 for acc in purple.PurpleAccountsGetAllActive():
     if purple.PurpleAccountGetProtocolId(acc) == "prpl-jabber":
         print i, purple.PurpleAccountGetUsername(acc)
         i += 1
 
-# Get account to work with
-account_number = int(raw_input("Choose the account (number): "))
+account_number = int(raw_input())
 account = purple.PurpleAccountsGetAllActive()[account_number-1]
 print "\nYour account is ", purple.PurpleAccountGetUsername(account)
 
@@ -831,7 +891,7 @@ print "\nYour account is ", purple.PurpleAccountGetUsername(account)
 displaier = output.Displaier()
 inp = inp.Input(displaier, sendMess = sendMessage, sendShutdown = sendShutdown)
 
-# Fing needed chat
+# Find needed chat
 for conv_chat in purple.PurpleGetChats():
     if checkChat(conv_chat):    
          chat = purple.PurpleConvChat(conv_chat)
@@ -840,9 +900,6 @@ for conv_chat in purple.PurpleGetChats():
 context = mpOTRContext(chat)
 # Say that you are in
 purple.PurpleConvChatSend(chat, "mpOTR:Init:I'm here")
-
-
-
 
 # main loop
 loop = gobject.MainLoop()
